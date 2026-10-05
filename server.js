@@ -26,8 +26,30 @@ if (fs.existsSync(envPath)) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
-const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Find the frontend folder. The normal layout is a sibling of backend/
+// (../frontend), but hosts vary in exactly where they check code out from,
+// so a couple of other plausible layouts are tried too before giving up —
+// and if none of them work, this fails loudly at startup with exactly what
+// was checked, instead of a cryptic ENOENT the first time someone visits.
+const FRONTEND_CANDIDATES = [
+  path.join(__dirname, '..', 'frontend'),
+  path.join(__dirname, 'frontend'),
+  path.join(__dirname, '..', '..', 'frontend')
+];
+const FRONTEND_DIR = FRONTEND_CANDIDATES.find((p) => fs.existsSync(path.join(p, 'index.html')));
+
+if (!FRONTEND_DIR) {
+  console.error('❌ Could not find frontend/index.html. Checked:');
+  FRONTEND_CANDIDATES.forEach((p) => console.error('   - ' + p));
+  console.error('   This almost always means the frontend folder was never pushed to the');
+  console.error('   repo (check GitHub shows both backend/ and frontend/ at the same');
+  console.error('   level), or the host\'s root directory setting doesn\'t match that');
+  console.error('   layout (on Render, Settings → Root Directory should be "backend").');
+  process.exit(1);
+}
+console.log('✅ Serving frontend from', FRONTEND_DIR);
 
 if (!MONGO_URI) {
   console.error('❌ MONGO_URI is not set. Set it in .env locally, or in your host\'s');
