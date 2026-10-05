@@ -28,11 +28,13 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-// Find the frontend folder. The normal layout is a sibling of backend/
-// (../frontend), but hosts vary in exactly where they check code out from,
-// so a couple of other plausible layouts are tried too before giving up —
-// and if none of them work, this fails loudly at startup with exactly what
-// was checked, instead of a cryptic ENOENT the first time someone visits.
+// Serving the frontend is OPTIONAL. This backend works perfectly well as a
+// standalone API with the frontend hosted somewhere else entirely (a
+// separate Render Static Site, Netlify, Vercel, anywhere) — in that setup
+// there's no frontend/ folder next to server.js at all, and that's fine.
+// If the folder IS present (the single-service layout from earlier), it
+// gets served automatically; if not, this just logs that it's running in
+// API-only mode instead of failing.
 const FRONTEND_CANDIDATES = [
   path.join(__dirname, '..', 'frontend'),
   path.join(__dirname, 'frontend'),
@@ -40,16 +42,14 @@ const FRONTEND_CANDIDATES = [
 ];
 const FRONTEND_DIR = FRONTEND_CANDIDATES.find((p) => fs.existsSync(path.join(p, 'index.html')));
 
-if (!FRONTEND_DIR) {
-  console.error('❌ Could not find frontend/index.html. Checked:');
-  FRONTEND_CANDIDATES.forEach((p) => console.error('   - ' + p));
-  console.error('   This almost always means the frontend folder was never pushed to the');
-  console.error('   repo (check GitHub shows both backend/ and frontend/ at the same');
-  console.error('   level), or the host\'s root directory setting doesn\'t match that');
-  console.error('   layout (on Render, Settings → Root Directory should be "backend").');
-  process.exit(1);
+if (FRONTEND_DIR) {
+  console.log('✅ Also serving frontend from', FRONTEND_DIR);
+} else {
+  console.log('ℹ️  No frontend folder found — running as an API-only backend.');
+  console.log('   If the frontend is hosted separately, make sure that frontend\'s');
+  console.log('   config.js points API_BASE_URL at this service\'s URL, and set');
+  console.log('   CORS_ORIGIN below to that frontend\'s exact URL.');
 }
-console.log('✅ Serving frontend from', FRONTEND_DIR);
 
 if (!MONGO_URI) {
   console.error('❌ MONGO_URI is not set. Set it in .env locally, or in your host\'s');
@@ -88,7 +88,7 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '1mb' })); // raised for profile photo uploads (base64)
-app.use(express.static(FRONTEND_DIR));
+if (FRONTEND_DIR) app.use(express.static(FRONTEND_DIR));
 
 // General API rate limit — generous, just a backstop against runaway loops
 // or scripted abuse, not meant to bother normal use.
@@ -131,7 +131,8 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/admin', require('./routes/admin'));
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
+  if (FRONTEND_DIR) return res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
+  res.json({ success: true, data: { message: 'TaskFlow API is running.', health: '/api/health' } });
 });
 
 // Catch-all error handler so failures show as JSON, not silent crashes. In
